@@ -1,0 +1,14 @@
+version: 1.01.{build}
+image: Visual Studio 2022
+
+configuration: Release
+
+before_build:
+  - dotnet restore Gil_ReportGen.csproj
+
+build_script:
+  - dotnet publish Gil_ReportGen.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o ./publish
+
+artifacts:
+  - path: publish/Gil_ReportGen_v1.01.exe
+    name: Gil_ReportGen_v1.01
