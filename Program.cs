@@ -23,7 +23,9 @@ namespace ReportAutomator
         [STAThread]
         static void Main()
         {
-            ApplicationConfiguration.Initialize();
+            Application.SetHighDpiMode(HighDpiMode.SystemAware);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainForm());
         }
     }
@@ -362,14 +364,15 @@ namespace ReportAutomator
 
         public MainForm()
         {
+            // CRITICAL: AutoScaleMode.None prevents WinForms from inflating fonts while keeping pixel coordinates fixed!
+            AutoScaleMode = AutoScaleMode.None;
+            Font = new Font("Segoe UI", 9f, FontStyle.Regular);
             Text = "Gil ReportGen v1.01";
-            ClientSize = new Size(1120, 760);
+            ClientSize = new Size(1160, 760);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             MinimizeBox = true;
             StartPosition = FormStartPosition.CenterScreen;
-            AutoScaleMode = AutoScaleMode.Font;
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
             DoubleBuffered = true;
             AllowDrop = true;
 
@@ -408,8 +411,18 @@ namespace ReportAutomator
 
         private void BuildUI()
         {
-            // 1. Top Control Bar (Single Clean Row, No Duplicate Title)
-            _headerCard = CreateCardPanel(new Rectangle(18, 14, 1084, 58));
+            // All fonts use GraphicsUnit.Pixel so 125%/150% Windows Display Scaling NEVER overflows any box or button
+            var fontSubBold = new Font("Segoe UI Semibold", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
+            var fontLabelBold = new Font("Segoe UI Semibold", 12f, FontStyle.Bold, GraphicsUnit.Pixel);
+            var fontInput = new Font("Segoe UI Semibold", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
+            var fontCombo = new Font("Segoe UI", 12.5f, FontStyle.Regular, GraphicsUnit.Pixel);
+            var fontDropTitle = new Font("Segoe UI Semibold", 15f, FontStyle.Bold, GraphicsUnit.Pixel);
+            var fontRegular = new Font("Segoe UI", 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+            var fontItalic = new Font("Segoe UI Semibold", 11.5f, FontStyle.Italic, GraphicsUnit.Pixel);
+            var fontTab = new Font("Segoe UI Semibold", 12f, FontStyle.Bold, GraphicsUnit.Pixel);
+
+            // 1. Top Control Bar (1124px wide, spacious layout)
+            _headerCard = CreateCardPanel(new Rectangle(18, 14, 1124, 58));
 
             _grLogoBadge = new Panel
             {
@@ -419,37 +432,39 @@ namespace ReportAutomator
             _grLogoBadge.Paint += (s, e) =>
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                var r = new Rectangle(0, 0, 35, 35);
+                var r = new Rectangle(0, 0, _grLogoBadge.Width - 1, _grLogoBadge.Height - 1);
                 using var path = GetRoundedRectPath(r, 9);
                 using var br = new LinearGradientBrush(r, Color.FromArgb(0, 122, 255), Color.FromArgb(88, 86, 214), LinearGradientMode.Vertical);
                 e.Graphics.FillPath(br, path);
-                using var f = new Font("Segoe UI", 11.5f, FontStyle.Bold);
+                using var f = new Font("Segoe UI", 14f, FontStyle.Bold, GraphicsUnit.Pixel);
                 var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                e.Graphics.DrawString("GR", f, Brushes.White, new RectangleF(0, 0, 36, 36), sf);
+                e.Graphics.DrawString("GR", f, Brushes.White, new RectangleF(0, 0, _grLogoBadge.Width, _grLogoBadge.Height), sf);
             };
 
             _lblSubtitle = new Label
             {
                 Text = "Automated Multi-Tab Excel  •  Accounting PDF  •  Sales.jpg",
-                Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
-                Location = new Point(60, 19),
-                AutoSize = true
+                Font = fontSubBold,
+                Location = new Point(60, 11),
+                Size = new Size(410, 36),
+                TextAlign = ContentAlignment.MiddleLeft
             };
 
             _lblVoyageTag = new Label
             {
                 Text = "VOYAGE:",
-                Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
-                Location = new Point(512, 20),
-                AutoSize = true
+                Font = fontLabelBold,
+                Location = new Point(478, 11),
+                Size = new Size(64, 36),
+                TextAlign = ContentAlignment.MiddleRight
             };
 
             _txtVoyage = new TextBox
             {
                 Text = "PO102426",
-                Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
-                Location = new Point(578, 16),
-                Size = new Size(102, 26),
+                Font = fontInput,
+                Location = new Point(548, 16),
+                Size = new Size(105, 26),
                 BorderStyle = BorderStyle.FixedSingle,
                 TextAlign = HorizontalAlignment.Center
             };
@@ -457,17 +472,18 @@ namespace ReportAutomator
             _lblThemeTag = new Label
             {
                 Text = "COLOR THEME:",
-                Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
-                Location = new Point(696, 20),
-                AutoSize = true
+                Font = fontLabelBold,
+                Location = new Point(664, 11),
+                Size = new Size(98, 36),
+                TextAlign = ContentAlignment.MiddleRight
             };
 
             _cmbTheme = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Font = new Font("Segoe UI", 9.25f),
-                Location = new Point(794, 16),
-                Size = new Size(162, 26)
+                Font = fontCombo,
+                Location = new Point(768, 16),
+                Size = new Size(185, 26)
             };
             foreach (var p in _presets) _cmbTheme.Items.Add(p);
             _cmbTheme.SelectedIndex = 0;
@@ -483,28 +499,27 @@ namespace ReportAutomator
 
             _pnlColorPreview = new Panel
             {
-                Location = new Point(962, 16),
-                Size = new Size(25, 25),
+                Location = new Point(961, 15),
+                Size = new Size(28, 28),
                 Cursor = Cursors.Hand
             };
             _pnlColorPreview.Paint += (s, e) =>
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                int half = _pnlColorPreview.Width / 2;
                 using var b1 = new SolidBrush(_activeMainColor);
                 using var b2 = new SolidBrush(_activeSubColor);
-                e.Graphics.FillRectangle(b1, 0, 0, 12, 25);
-                e.Graphics.FillRectangle(b2, 12, 0, 13, 25);
+                e.Graphics.FillRectangle(b1, 0, 0, half, _pnlColorPreview.Height);
+                e.Graphics.FillRectangle(b2, half, 0, _pnlColorPreview.Width - half, _pnlColorPreview.Height);
                 using var pen = new Pen(Color.FromArgb(160, 160, 165), 1);
-                e.Graphics.DrawRectangle(pen, 0, 0, 24, 24);
+                e.Graphics.DrawRectangle(pen, 0, 0, _pnlColorPreview.Width - 1, _pnlColorPreview.Height - 1);
             };
             _pnlColorPreview.Click += BtnCustomColor_Click;
 
-            _btnCustomColor = CreatePillButton("Custom", new Point(992, 15), new Size(56, 27), false);
-            _btnCustomColor.Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold);
+            _btnCustomColor = CreatePillButton("Custom", new Point(996, 14), new Size(74, 30), false);
             _btnCustomColor.Click += BtnCustomColor_Click;
 
-            _btnDarkToggle = CreatePillButton("☾", new Point(1052, 15), new Size(22, 27), false);
-            _btnDarkToggle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+            _btnDarkToggle = CreatePillButton("☾", new Point(1076, 14), new Size(34, 30), false);
             _btnDarkToggle.Click += (s, e) =>
             {
                 _isDarkMode = !_isDarkMode;
@@ -517,7 +532,7 @@ namespace ReportAutomator
             });
 
             // 2. Drag & Drop Zone + 4 Equal Status Pills
-            _dropCard = CreateCardPanel(new Rectangle(18, 84, 1084, 128));
+            _dropCard = CreateCardPanel(new Rectangle(18, 84, 1124, 132));
             _dropCard.AllowDrop = true;
             _dropCard.DragEnter += MainForm_DragEnter;
             _dropCard.DragDrop += MainForm_DragDrop;
@@ -525,29 +540,31 @@ namespace ReportAutomator
             _lblDropTitle = new Label
             {
                 Text = "Drag & Drop Your 4 Cruise Files Here",
-                Font = new Font("Segoe UI Semibold", 11.5f, FontStyle.Bold),
+                Font = fontDropTitle,
                 Location = new Point(18, 12),
-                AutoSize = true
+                Size = new Size(550, 22),
+                UseMnemonic = false
             };
 
             _lblDropHint = new Label
             {
                 Text = "Auto-detects AccountReportStatistics (.xls), OrderReport (.xls), Manifest (.xlsx), and FSS Item Sales (.csv)",
-                Font = new Font("Segoe UI", 8.75f),
-                Location = new Point(19, 36),
-                AutoSize = true
+                Font = fontRegular,
+                Location = new Point(18, 37),
+                Size = new Size(820, 20),
+                UseMnemonic = false
             };
 
-            _btnBrowseFiles = CreatePillButton("Browse Files...", new Point(850, 14), new Size(130, 34), true);
+            _btnBrowseFiles = CreatePillButton("Browse Files...", new Point(864, 15), new Size(146, 36), true);
             _btnBrowseFiles.Click += BtnBrowseFiles_Click;
 
-            _btnClearFiles = CreatePillButton("Reset", new Point(988, 14), new Size(80, 34), false);
+            _btnClearFiles = CreatePillButton("Reset", new Point(1018, 15), new Size(90, 36), false);
             _btnClearFiles.Click += (s, e) => ClearAllData();
 
             _statusTable = new TableLayoutPanel
             {
-                Location = new Point(16, 64),
-                Size = new Size(1052, 50),
+                Location = new Point(14, 66),
+                Size = new Size(1096, 52),
                 ColumnCount = 4,
                 RowCount = 1,
                 BackColor = Color.Transparent
@@ -572,15 +589,15 @@ namespace ReportAutomator
                 _lblDropTitle, _lblDropHint, _btnBrowseFiles, _btnClearFiles, _statusTable
             });
 
-            // 3. Live Multi-Tab Preview Area
-            _previewCard = CreateCardPanel(new Rectangle(18, 224, 1084, 450));
+            // 3. Live Multi-Tab Preview Area (178px wide tabs so no title is ever cut off)
+            _previewCard = CreateCardPanel(new Rectangle(18, 228, 1124, 444));
 
             _tabPreview = new TabControl
             {
                 Location = new Point(14, 12),
-                Size = new Size(1056, 424),
-                Font = new Font("Segoe UI Semibold", 9.25f),
-                ItemSize = new Size(155, 28),
+                Size = new Size(1096, 418),
+                Font = fontTab,
+                ItemSize = new Size(178, 30),
                 SizeMode = TabSizeMode.Fixed
             };
 
@@ -600,39 +617,43 @@ namespace ReportAutomator
 
             _previewCard.Controls.Add(_tabPreview);
 
-            // 4. Bottom Action Bar (Spacious, Zero Overlap)
-            _footerCard = CreateCardPanel(new Rectangle(18, 686, 1084, 60));
+            // 4. Bottom Action Bar (Spacious, Zero Overlap, UseMnemonic=false so '&' is visible)
+            _footerCard = CreateCardPanel(new Rectangle(18, 684, 1124, 62));
 
             _chkExportCsvs = new CheckBox
             {
                 Text = "Export standalone OrderReport-Photo.csv & OrderReport-Sales.csv",
                 Checked = true,
-                Font = new Font("Segoe UI", 8.75f),
-                Location = new Point(16, 10),
-                AutoSize = true
+                Font = fontRegular,
+                Location = new Point(16, 9),
+                Size = new Size(495, 22),
+                AutoSize = false,
+                UseMnemonic = false
             };
 
             _lblFooterStatus = new Label
             {
                 Text = "Ready — Drop your cruise files above to preview & generate.",
-                Font = new Font("Segoe UI", 8.5f),
-                Location = new Point(16, 33),
-                Size = new Size(420, 18),
-                AutoEllipsis = true
+                Font = fontRegular,
+                Location = new Point(16, 34),
+                Size = new Size(390, 20),
+                AutoEllipsis = true,
+                UseMnemonic = false
             };
 
             _lblCreatedBy = new Label
             {
                 Text = "Created by Gil",
-                Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Italic),
-                Location = new Point(442, 33),
-                AutoSize = true
+                Font = fontItalic,
+                Location = new Point(414, 34),
+                Size = new Size(100, 20),
+                TextAlign = ContentAlignment.MiddleLeft
             };
 
-            _btnCopyTab = CreatePillButton("Copy Active Tab", new Point(540, 12), new Size(136, 36), false);
+            _btnCopyTab = CreatePillButton("Copy Active Tab", new Point(526, 13), new Size(148, 36), false);
             _btnCopyTab.Click += BtnCopyTab_Click;
 
-            _btnOpenFolder = CreatePillButton("Open Output Folder", new Point(684, 12), new Size(154, 36), false);
+            _btnOpenFolder = CreatePillButton("Open Output Folder", new Point(684, 13), new Size(168, 36), false);
             _btnOpenFolder.Enabled = false;
             _btnOpenFolder.Click += (s, e) =>
             {
@@ -640,7 +661,7 @@ namespace ReportAutomator
                     Process.Start("explorer.exe", _lastOutputFolder);
             };
 
-            _btnGenerateAll = CreatePillButton("Generate Excel + PDF + JPG", new Point(846, 12), new Size(222, 36), true);
+            _btnGenerateAll = CreatePillButton("Generate Excel + PDF + JPG", new Point(862, 13), new Size(246, 36), true);
             _btnGenerateAll.Click += BtnGenerateAll_Click;
 
             _footerCard.Controls.AddRange(new Control[] {
@@ -685,9 +706,10 @@ namespace ReportAutomator
                 Size = size,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
+                Font = new Font("Segoe UI Semibold", 12.5f, FontStyle.Bold, GraphicsUnit.Pixel),
                 TextAlign = ContentAlignment.MiddleCenter,
                 UseVisualStyleBackColor = false,
+                UseMnemonic = false,
                 Tag = isPrimary ? "primary" : "secondary"
             };
             btn.FlatAppearance.BorderSize = 1;
@@ -703,8 +725,9 @@ namespace ReportAutomator
                 Margin = new Padding(4, 3, 4, 3),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(10, 0, 6, 0),
-                Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Bold),
+                Font = new Font("Segoe UI Semibold", 12f, FontStyle.Bold, GraphicsUnit.Pixel),
                 AutoEllipsis = true,
+                UseMnemonic = false,
                 Tag = "waiting"
             };
         }
@@ -724,7 +747,8 @@ namespace ReportAutomator
                 EnableHeadersVisualStyles = false,
                 ColumnHeadersHeight = 32,
                 ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-                AllowUserToResizeRows = false
+                AllowUserToResizeRows = false,
+                Font = new Font("Segoe UI", 12f, FontStyle.Regular, GraphicsUnit.Pixel)
             };
             dgv.RowTemplate.Height = 26;
             return dgv;
@@ -794,7 +818,7 @@ namespace ReportAutomator
                 g.DefaultCellStyle.SelectionForeColor = Color.White;
                 g.ColumnHeadersDefaultCellStyle.BackColor = _isDarkMode ? Color.FromArgb(44, 44, 46) : Color.FromArgb(242, 242, 247);
                 g.ColumnHeadersDefaultCellStyle.ForeColor = textPrimary;
-                g.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold);
+                g.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 12f, FontStyle.Bold, GraphicsUnit.Pixel);
             }
 
             foreach (TabPage tp in _tabPreview.TabPages)
