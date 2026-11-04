@@ -1,0 +1,33 @@
+name: Build Gil ReportGen v1.01
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET 8
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore Gil_ReportGen.csproj
+
+    - name: Publish Single-File Executable
+      run: dotnet publish Gil_ReportGen.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o ./publish
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Gil-ReportGen-v1.01
+        path: ./publish/Gil_ReportGen_v1.01.exe
