@@ -124,6 +124,7 @@ namespace ReportAutomator
         private List<OrderRow> _orderRowsForPhotoSales = new List<OrderRow>();
         private HashSet<string> _excludedOrderStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Refund", "InCart" };
         private HashSet<string> _excludedMediaTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OB02", "OB03", "OB04", "OB05", "OB2", "OB3", "OB4", "OB5" };
+        private HashSet<string> _excludedDataTabMediaTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private Button _btnFilterOrders;
         private Font _gridHeaderFont = new Font("Segoe UI Semibold", 12f, FontStyle.Bold, GraphicsUnit.Pixel);
         private List<ManifestRow> _manifestRows = new List<ManifestRow>();
@@ -372,7 +373,7 @@ namespace ReportAutomator
             // CRITICAL: AutoScaleMode.None prevents WinForms from inflating fonts while keeping pixel coordinates fixed!
             AutoScaleMode = AutoScaleMode.None;
             Font = new Font("Segoe UI", 9f, FontStyle.Regular);
-            Text = "Gil ReportGen v2.0";
+            Text = "Gil ReportGen v2.1";
             ClientSize = new Size(1160, 760);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -902,7 +903,7 @@ namespace ReportAutomator
             {
                 Title = "Select Your Cruise Report Files (Accounting, Order, Manifest, FSS CSV)",
                 Multiselect = true,
-                Filter = "All Report Files (*.xls;*.xlsx;*.csv)|*.xls;*.xlsx;*.csv|All Files (*.*)|*.*"
+                Filter = "All Files (*.*)|*.*|Excel & CSV Files (*.xls;*.xlsx;*.csv)|*.xls;*.xlsx;*.csv"
             };
             if (ofd.ShowDialog(this) == DialogResult.OK)
             {
@@ -1018,19 +1019,26 @@ namespace ReportAutomator
                 return;
             }
 
-            if (ext == ".xlsx" || ext == ".xlsm")
+            if (ext == ".xlsx" || ext == ".xlsm" || ext == ".xls" || ext == "")
             {
-                using var wb = new XLWorkbook(filePath);
-                var ws = wb.Worksheets.First();
-                string a1 = ws.Cell(1, 1).GetString().Trim();
-                string b1 = ws.Cell(1, 2).GetString().Trim();
-                if (a1.Equals("CABIN_NUM", StringComparison.OrdinalIgnoreCase) ||
-                    b1.Equals("ITEM_TAG", StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    ParseManifestXlsx(wb);
-                    _manifestFilePath = filePath;
-                    _badgeMan.Text = $"✓ Manifest: {_manifestRows.Count} Pre-Cruise pkgs";
-                    _badgeMan.Tag = "loaded";
+                    using var wb = new XLWorkbook(filePath);
+                    var ws = wb.Worksheets.First();
+                    string a1 = ws.Cell(1, 1).GetString().Trim();
+                    string b1 = ws.Cell(1, 2).GetString().Trim();
+                    if (a1.Equals("CABIN_NUM", StringComparison.OrdinalIgnoreCase) ||
+                        b1.Equals("ITEM_TAG", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ParseManifestXlsx(wb);
+                        _manifestFilePath = filePath;
+                        _badgeMan.Text = $"✓ Manifest: {_manifestRows.Count} Pre-Cruise pkgs";
+                        _badgeMan.Tag = "loaded";
+                    }
+                }
+                catch
+                {
+                    // Ignore, it might just not be a valid OpenXML excel file
                 }
             }
         }
@@ -1218,7 +1226,10 @@ namespace ReportAutomator
                 if (_excludedOrderStatuses.Contains(item.OrderStatus))
                     continue;
 
-                _orderRowsForDataTab.Add(item);
+                if (!_excludedDataTabMediaTypes.Contains(item.MediaType))
+                {
+                    _orderRowsForDataTab.Add(item);
+                }
 
                 if (!_excludedMediaTypes.Contains(item.MediaType))
                 {
@@ -1245,7 +1256,7 @@ namespace ReportAutomator
             {
                 AutoScaleMode = AutoScaleMode.None,
                 Text = "Filter / Exclude Media Types & Order Statuses",
-                ClientSize = new Size(520, 420),
+                ClientSize = new Size(770, 420),
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent,
                 MaximizeBox = false,
@@ -1259,18 +1270,27 @@ namespace ReportAutomator
 
             var lblInstruction = new Label
             {
-                Text = "Check items below to EXCLUDE them from OrderReport-Photo & OrderReport-Sales:",
+                Text = "Check items below to EXCLUDE them from the respective tabs and exports:",
                 Font = fontHeader,
                 Location = new Point(16, 12),
-                Size = new Size(488, 22),
+                Size = new Size(738, 22),
+                UseMnemonic = false
+            };
+
+            var lblDataTab = new Label
+            {
+                Text = "Exclude Media Type (DATA_TAB_PASTE):",
+                Font = fontHeader,
+                Location = new Point(16, 42),
+                Size = new Size(236, 20),
                 UseMnemonic = false
             };
 
             var lblMedia = new Label
             {
-                Text = "Exclude Media Types (Photo & Sales):",
+                Text = "Exclude Media Type (Photo & Sales):",
                 Font = fontHeader,
-                Location = new Point(16, 42),
+                Location = new Point(268, 42),
                 Size = new Size(236, 20),
                 UseMnemonic = false
             };
@@ -1279,12 +1299,12 @@ namespace ReportAutomator
             {
                 Text = "Exclude Order Status (All Order Tabs):",
                 Font = fontHeader,
-                Location = new Point(268, 42),
+                Location = new Point(520, 42),
                 Size = new Size(236, 20),
                 UseMnemonic = false
             };
-
-            var clbMedia = new CheckedListBox
+            
+            var clbDataTab = new CheckedListBox
             {
                 Location = new Point(16, 66),
                 Size = new Size(236, 290),
@@ -1295,9 +1315,20 @@ namespace ReportAutomator
                 ForeColor = _isDarkMode ? Color.FromArgb(245, 245, 247) : Color.FromArgb(28, 28, 30)
             };
 
-            var clbStatus = new CheckedListBox
+            var clbMedia = new CheckedListBox
             {
                 Location = new Point(268, 66),
+                Size = new Size(236, 290),
+                CheckOnClick = true,
+                Font = fontSub,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = _isDarkMode ? Color.FromArgb(44, 44, 46) : Color.White,
+                ForeColor = _isDarkMode ? Color.FromArgb(245, 245, 247) : Color.FromArgb(28, 28, 30)
+            };
+
+            var clbStatus = new CheckedListBox
+            {
+                Location = new Point(520, 66),
                 Size = new Size(236, 290),
                 CheckOnClick = true,
                 Font = fontSub,
@@ -1317,6 +1348,13 @@ namespace ReportAutomator
 
             foreach (var m in distinctMedia)
             {
+                bool isDataTabExcluded = _excludedDataTabMediaTypes.Contains(m) ||
+                                         (m.Equals("OB02", StringComparison.OrdinalIgnoreCase) && _excludedDataTabMediaTypes.Contains("OB2")) ||
+                                         (m.Equals("OB03", StringComparison.OrdinalIgnoreCase) && _excludedDataTabMediaTypes.Contains("OB3")) ||
+                                         (m.Equals("OB04", StringComparison.OrdinalIgnoreCase) && _excludedDataTabMediaTypes.Contains("OB4")) ||
+                                         (m.Equals("OB05", StringComparison.OrdinalIgnoreCase) && _excludedDataTabMediaTypes.Contains("OB5"));
+                clbDataTab.Items.Add(m, isDataTabExcluded);
+                
                 bool isExcluded = _excludedMediaTypes.Contains(m) ||
                                   (m.Equals("OB02", StringComparison.OrdinalIgnoreCase) && _excludedMediaTypes.Contains("OB2")) ||
                                   (m.Equals("OB03", StringComparison.OrdinalIgnoreCase) && _excludedMediaTypes.Contains("OB3")) ||
@@ -1344,6 +1382,10 @@ namespace ReportAutomator
             btnSelectDefault.Click += (s, e) =>
             {
                 var defM = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OB02", "OB03", "OB04", "OB05", "OB2", "OB3", "OB4", "OB5" };
+                
+                for (int i = 0; i < clbDataTab.Items.Count; i++)
+                    clbDataTab.SetItemChecked(i, false); // By default, do not exclude anything from Data_Tab_Paste
+                    
                 for (int i = 0; i < clbMedia.Items.Count; i++)
                     clbMedia.SetItemChecked(i, defM.Contains(clbMedia.Items[i].ToString()));
 
@@ -1352,11 +1394,22 @@ namespace ReportAutomator
                     clbStatus.SetItemChecked(i, defS.Contains(clbStatus.Items[i].ToString()));
             };
 
-            var btnApply = CreatePillButton("Apply Filters", new Point(354, 368), new Size(150, 36), true);
+            var btnApply = CreatePillButton("Apply Filters", new Point(606, 368), new Size(150, 36), true);
             btnApply.BackColor = Color.FromArgb(0, 122, 255);
             btnApply.ForeColor = Color.White;
             btnApply.Click += (s, e) =>
             {
+                _excludedDataTabMediaTypes.Clear();
+                foreach (var item in clbDataTab.CheckedItems)
+                {
+                    string val = item.ToString();
+                    _excludedDataTabMediaTypes.Add(val);
+                    if (val.Equals("OB02", StringComparison.OrdinalIgnoreCase)) _excludedDataTabMediaTypes.Add("OB2");
+                    if (val.Equals("OB03", StringComparison.OrdinalIgnoreCase)) _excludedDataTabMediaTypes.Add("OB3");
+                    if (val.Equals("OB04", StringComparison.OrdinalIgnoreCase)) _excludedDataTabMediaTypes.Add("OB4");
+                    if (val.Equals("OB05", StringComparison.OrdinalIgnoreCase)) _excludedDataTabMediaTypes.Add("OB5");
+                }
+                
                 _excludedMediaTypes.Clear();
                 foreach (var item in clbMedia.CheckedItems)
                 {
@@ -1380,7 +1433,7 @@ namespace ReportAutomator
                 dlg.Close();
             };
 
-            dlg.Controls.AddRange(new Control[] { lblInstruction, lblMedia, lblStatus, clbMedia, clbStatus, btnSelectDefault, btnApply });
+            dlg.Controls.AddRange(new Control[] { lblInstruction, lblDataTab, lblMedia, lblStatus, clbDataTab, clbMedia, clbStatus, btnSelectDefault, btnApply });
             dlg.ShowDialog(this);
         }
 
@@ -2133,7 +2186,7 @@ namespace ReportAutomator
 
         private int GetDynamicJpgHeightInches(int lineCount)
         {
-            // Scales dynamically from 8x24 inches up to 8x36 inches at  DPI based on accounting report length
+            // Scales dynamically from 8x24 inches up to 8x36 inches at 300 DPI based on accounting report length
             if (lineCount <= 145) return 24;
             if (lineCount <= 185) return 30;
             if (lineCount <= 215) return 32;
@@ -2148,8 +2201,8 @@ namespace ReportAutomator
             int widthInches = 8;
             int heightInches = GetDynamicJpgHeightInches(lines.Count);
 
-            int targetW = widthInches * dpi;   // 1600 px (8 inches @  DPI)
-            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @  DPI)
+            int targetW = widthInches * dpi;   // 1600 px (8 inches @ 300 DPI)
+            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @ 300 DPI)
 
             using var bmp = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb);
             bmp.SetResolution(dpi, dpi);
