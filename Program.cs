@@ -2144,7 +2144,7 @@ namespace ReportAutomator
         {
             var lines = prebuiltLines ?? BuildPivotRenderLines(voyage);
 
-            const int dpi = ;
+            const int dpi = 300;
             int widthInches = 8;
             int heightInches = GetDynamicJpgHeightInches(lines.Count);
 
