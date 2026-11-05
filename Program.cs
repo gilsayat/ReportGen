@@ -119,8 +119,12 @@ namespace ReportAutomator
         private string _lastOutputFolder = "";
 
         private List<AccountingRow> _accountingRows = new List<AccountingRow>();
+        private List<OrderRow> _rawOrderRows = new List<OrderRow>();
         private List<OrderRow> _orderRowsForDataTab = new List<OrderRow>();
         private List<OrderRow> _orderRowsForPhotoSales = new List<OrderRow>();
+        private HashSet<string> _excludedOrderStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Refund", "InCart" };
+        private HashSet<string> _excludedMediaTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OB02", "OB03", "OB04", "OB05", "OB2", "OB3", "OB4", "OB5" };
+        private Button _btnFilterOrders;
         private List<ManifestRow> _manifestRows = new List<ManifestRow>();
         private IrisSummary _irisSummary = new IrisSummary();
 
@@ -367,7 +371,7 @@ namespace ReportAutomator
             // CRITICAL: AutoScaleMode.None prevents WinForms from inflating fonts while keeping pixel coordinates fixed!
             AutoScaleMode = AutoScaleMode.None;
             Font = new Font("Segoe UI", 9f, FontStyle.Regular);
-            Text = "Gil ReportGen v1.01";
+            Text = "Gil ReportGen v1.02";
             ClientSize = new Size(1160, 760);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -551,9 +555,12 @@ namespace ReportAutomator
                 Text = "Auto-detects AccountReportStatistics (.xls), OrderReport (.xls), Manifest (.xlsx), and FSS Item Sales (.csv)",
                 Font = fontRegular,
                 Location = new Point(18, 37),
-                Size = new Size(820, 20),
+                Size = new Size(670, 20),
                 UseMnemonic = false
             };
+
+            _btnFilterOrders = CreatePillButton("Media / Status Filters", new Point(696, 15), new Size(160, 36), false);
+            _btnFilterOrders.Click += (s, e) => ShowOrderFilterChecklistDialog();
 
             _btnBrowseFiles = CreatePillButton("Browse Files...", new Point(864, 15), new Size(146, 36), true);
             _btnBrowseFiles.Click += BtnBrowseFiles_Click;
@@ -586,7 +593,7 @@ namespace ReportAutomator
             _statusTable.Controls.Add(_badgeFss, 3, 0);
 
             _dropCard.Controls.AddRange(new Control[] {
-                _lblDropTitle, _lblDropHint, _btnBrowseFiles, _btnClearFiles, _statusTable
+                _lblDropTitle, _lblDropHint, _btnFilterOrders, _btnBrowseFiles, _btnClearFiles, _statusTable
             });
 
             // 3. Live Multi-Tab Preview Area (178px wide tabs so no title is ever cut off)
@@ -906,6 +913,7 @@ namespace ReportAutomator
         {
             _accountingFilePath = _orderFilePath = _manifestFilePath = _fssFilePath = "";
             _accountingRows.Clear();
+            _rawOrderRows.Clear();
             _orderRowsForDataTab.Clear();
             _orderRowsForPhotoSales.Clear();
             _manifestRows.Clear();
@@ -1106,6 +1114,7 @@ namespace ReportAutomator
 
         private void ParseOrderHtmlXls(string filePath)
         {
+            _rawOrderRows.Clear();
             _orderRowsForDataTab.Clear();
             _orderRowsForPhotoSales.Clear();
 
@@ -1132,19 +1141,12 @@ namespace ReportAutomator
 
             if (headerIdx == -1) return;
 
-            var excludedMedia = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OB02", "OB03", "OB04", "OB05", "OB2", "OB3", "OB4", "OB5" };
-
             for (int i = headerIdx + 1; i < rows.Count; i++)
             {
                 var cells = rows[i].SelectNodes("./td|./th");
                 if (cells == null || cells.Count < 22) continue;
 
                 string orderStatus = HtmlEntity.DeEntitize(cells[17].InnerText).Trim();
-                if (orderStatus.Equals("Refund", StringComparison.OrdinalIgnoreCase) ||
-                    orderStatus.Equals("InCart", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
 
                 var item = new OrderRow
                 {
@@ -1161,13 +1163,187 @@ namespace ReportAutomator
                     ChannelId = HtmlEntity.DeEntitize(cells[21].InnerText).Trim()
                 };
 
+                _rawOrderRows.Add(item);
+            }
+
+            ApplyOrderFilters();
+            ShowOrderFilterChecklistDialog();
+        }
+
+        private void ApplyOrderFilters()
+        {
+            _orderRowsForDataTab.Clear();
+            _orderRowsForPhotoSales.Clear();
+
+            foreach (var item in _rawOrderRows)
+            {
+                if (_excludedOrderStatuses.Contains(item.OrderStatus))
+                    continue;
+
                 _orderRowsForDataTab.Add(item);
 
-                if (!excludedMedia.Contains(item.MediaType))
+                if (!_excludedMediaTypes.Contains(item.MediaType))
                 {
                     _orderRowsForPhotoSales.Add(item);
                 }
             }
+
+            if (!string.IsNullOrEmpty(_orderFilePath))
+            {
+                _badgeOrd.Text = $"✓ Orders: {_orderRowsForDataTab.Count:N0} Data / {_orderRowsForPhotoSales.Count:N0} Sales";
+                _badgeOrd.Tag = "loaded";
+            }
+        }
+
+        private void ShowOrderFilterChecklistDialog()
+        {
+            if (_rawOrderRows.Count == 0)
+            {
+                MessageBox.Show(this, "Drop or browse an OrderReport (.xls) file first to configure Media Type and Order Status filters.", "Order Filters", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using var dlg = new Form
+            {
+                AutoScaleMode = AutoScaleMode.None,
+                Text = "Filter / Exclude Media Types & Order Statuses",
+                ClientSize = new Size(520, 420),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = _isDarkMode ? Color.FromArgb(28, 28, 30) : Color.FromArgb(242, 242, 247),
+                ForeColor = _isDarkMode ? Color.FromArgb(245, 245, 247) : Color.FromArgb(28, 28, 30)
+            };
+
+            var fontHeader = new Font("Segoe UI Semibold", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
+            var fontSub = new Font("Segoe UI", 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+
+            var lblInstruction = new Label
+            {
+                Text = "Check items below to EXCLUDE them from OrderReport-Photo & OrderReport-Sales:",
+                Font = fontHeader,
+                Location = new Point(16, 12),
+                Size = new Size(488, 22),
+                UseMnemonic = false
+            };
+
+            var lblMedia = new Label
+            {
+                Text = "Exclude Media Types (Photo & Sales):",
+                Font = fontHeader,
+                Location = new Point(16, 42),
+                Size = new Size(236, 20),
+                UseMnemonic = false
+            };
+
+            var lblStatus = new Label
+            {
+                Text = "Exclude Order Status (All Order Tabs):",
+                Font = fontHeader,
+                Location = new Point(268, 42),
+                Size = new Size(236, 20),
+                UseMnemonic = false
+            };
+
+            var clbMedia = new CheckedListBox
+            {
+                Location = new Point(16, 66),
+                Size = new Size(236, 290),
+                CheckOnClick = true,
+                Font = fontSub,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = _isDarkMode ? Color.FromArgb(44, 44, 46) : Color.White,
+                ForeColor = _isDarkMode ? Color.FromArgb(245, 245, 247) : Color.FromArgb(28, 28, 30)
+            };
+
+            var clbStatus = new CheckedListBox
+            {
+                Location = new Point(268, 66),
+                Size = new Size(236, 290),
+                CheckOnClick = true,
+                Font = fontSub,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = _isDarkMode ? Color.FromArgb(44, 44, 46) : Color.White,
+                ForeColor = _isDarkMode ? Color.FromArgb(245, 245, 247) : Color.FromArgb(28, 28, 30)
+            };
+
+            var defaultMediaCodes = new[] { "OB02", "OB03", "OB04", "OB05" };
+            var distinctMedia = _rawOrderRows
+                .Select(r => r.MediaType)
+                .Where(m => !string.IsNullOrWhiteSpace(m))
+                .Union(defaultMediaCodes, StringComparer.OrdinalIgnoreCase)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(m => m, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            foreach (var m in distinctMedia)
+            {
+                bool isExcluded = _excludedMediaTypes.Contains(m) ||
+                                  (m.Equals("OB02", StringComparison.OrdinalIgnoreCase) && _excludedMediaTypes.Contains("OB2")) ||
+                                  (m.Equals("OB03", StringComparison.OrdinalIgnoreCase) && _excludedMediaTypes.Contains("OB3")) ||
+                                  (m.Equals("OB04", StringComparison.OrdinalIgnoreCase) && _excludedMediaTypes.Contains("OB4")) ||
+                                  (m.Equals("OB05", StringComparison.OrdinalIgnoreCase) && _excludedMediaTypes.Contains("OB5"));
+                clbMedia.Items.Add(m, isExcluded);
+            }
+
+            var defaultStatuses = new[] { "Refund", "InCart" };
+            var distinctStatuses = _rawOrderRows
+                .Select(r => r.OrderStatus)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Union(defaultStatuses, StringComparer.OrdinalIgnoreCase)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            foreach (var st in distinctStatuses)
+            {
+                bool isExcluded = _excludedOrderStatuses.Contains(st);
+                clbStatus.Items.Add(st, isExcluded);
+            }
+
+            var btnSelectDefault = CreatePillButton("Reset Defaults", new Point(16, 368), new Size(130, 36), false);
+            btnSelectDefault.Click += (s, e) =>
+            {
+                var defM = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OB02", "OB03", "OB04", "OB05", "OB2", "OB3", "OB4", "OB5" };
+                for (int i = 0; i < clbMedia.Items.Count; i++)
+                    clbMedia.SetItemChecked(i, defM.Contains(clbMedia.Items[i].ToString()));
+
+                var defS = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Refund", "InCart" };
+                for (int i = 0; i < clbStatus.Items.Count; i++)
+                    clbStatus.SetItemChecked(i, defS.Contains(clbStatus.Items[i].ToString()));
+            };
+
+            var btnApply = CreatePillButton("Apply Filters", new Point(354, 368), new Size(150, 36), true);
+            btnApply.BackColor = Color.FromArgb(0, 122, 255);
+            btnApply.ForeColor = Color.White;
+            btnApply.Click += (s, e) =>
+            {
+                _excludedMediaTypes.Clear();
+                foreach (var item in clbMedia.CheckedItems)
+                {
+                    string val = item.ToString();
+                    _excludedMediaTypes.Add(val);
+                    if (val.Equals("OB02", StringComparison.OrdinalIgnoreCase)) _excludedMediaTypes.Add("OB2");
+                    if (val.Equals("OB03", StringComparison.OrdinalIgnoreCase)) _excludedMediaTypes.Add("OB3");
+                    if (val.Equals("OB04", StringComparison.OrdinalIgnoreCase)) _excludedMediaTypes.Add("OB4");
+                    if (val.Equals("OB05", StringComparison.OrdinalIgnoreCase)) _excludedMediaTypes.Add("OB5");
+                }
+
+                _excludedOrderStatuses.Clear();
+                foreach (var item in clbStatus.CheckedItems)
+                {
+                    _excludedOrderStatuses.Add(item.ToString());
+                }
+
+                ApplyOrderFilters();
+                RefreshPreviews();
+                dlg.DialogResult = DialogResult.OK;
+                dlg.Close();
+            };
+
+            dlg.Controls.AddRange(new Control[] { lblInstruction, lblMedia, lblStatus, clbMedia, clbStatus, btnSelectDefault, btnApply });
+            dlg.ShowDialog(this);
         }
 
         private void ParseManifestXlsx(XLWorkbook wb)
@@ -1419,7 +1595,7 @@ namespace ReportAutomator
             );
             _dgvIris.DataSource = dtIris;
 
-            if (_orderRowsForPhotoSales.Count > 0)
+            if (_rawOrderRows.Count > 0)
             {
                 var dtPhoto = new DataTable();
                 dtPhoto.Columns.Add("File Name");
@@ -1511,7 +1687,7 @@ namespace ReportAutomator
                     $"All reports generated successfully in:\n{outDir}\n\n" +
                     $"• {Path.GetFileName(excelPath)} (7 Tabs)\n" +
                     $"• AccountReportStatistics.pdf (4-Page US Letter)\n" +
-                    $"• Sales.jpg (227x1024 Tall Strip)\n" +
+                    $"• Sales.jpg (8x{GetDynamicJpgHeightInches(BuildPivotRenderLines(voyage).Count)}\" @ 200 DPI)\n" +
                     (_chkExportCsvs.Checked ? "• OrderReport-Photo.csv & OrderReport-Sales.csv" : ""),
                     "Generation Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -1860,39 +2036,54 @@ namespace ReportAutomator
             return lines;
         }
 
+        private int GetDynamicJpgHeightInches(int lineCount)
+        {
+            // Scales dynamically from 8x24 inches up to 8x36 inches at 200 DPI based on accounting report length
+            if (lineCount <= 145) return 24;
+            if (lineCount <= 185) return 30;
+            if (lineCount <= 215) return 32;
+            return 36;
+        }
+
         private void GenerateSalesJpg(string jpgPath, string voyage)
         {
             var lines = BuildPivotRenderLines(voyage);
 
-            int targetW = 227;
-            int targetH = 1024;
-            int hiW = targetW * 4;
-            int hiH = targetH * 4;
+            const int dpi = 200;
+            int widthInches = 8;
+            int heightInches = GetDynamicJpgHeightInches(lines.Count);
 
-            using var hiBmp = new Bitmap(hiW, hiH, PixelFormat.Format24bppRgb);
-            using (var g = Graphics.FromImage(hiBmp))
+            int targetW = widthInches * dpi;   // 1600 px (8 inches @ 200 DPI)
+            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @ 200 DPI)
+
+            using var bmp = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb);
+            bmp.SetResolution(dpi, dpi);
+
+            using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.White);
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-                float marginX = 20f;
-                float topTitleH = 56f;
-                float availH = hiH - topTitleH - 12f;
-                float rowH = availH / lines.Count;
+                float marginX = 36f;
+                float topTitleH = 92f;
+                float bottomMargin = 28f;
+                float availH = targetH - topTitleH - bottomMargin;
+                float rowH = availH / Math.Max(1, lines.Count);
 
-                using var titleFont = new Font("Calibri", 18f, FontStyle.Bold, GraphicsUnit.Pixel);
+                using var titleFont = new Font("Calibri", 34f, FontStyle.Bold, GraphicsUnit.Pixel);
                 var sfCenter = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                g.DrawString(voyage, titleFont, Brushes.Black, new RectangleF(0, 4, hiW, topTitleH - 4), sfCenter);
+                g.DrawString(voyage, titleFont, Brushes.Black, new RectangleF(0, 10f, targetW, topTitleH - 14f), sfCenter);
 
-                float tableW = hiW - (marginX * 2);
+                float tableW = targetW - (marginX * 2);
                 float[] colW = { tableW * 0.42f, tableW * 0.145f, tableW * 0.145f, tableW * 0.145f, tableW * 0.145f };
 
-                using var boldFont = new Font("Calibri", Math.Max(9f, rowH * 0.68f), FontStyle.Bold, GraphicsUnit.Pixel);
-                using var regFont = new Font("Calibri", Math.Max(9f, rowH * 0.66f), FontStyle.Regular, GraphicsUnit.Pixel);
+                float fontSize = Math.Clamp(rowH * 0.64f, 12f, 28f);
+                using var boldFont = new Font("Calibri", fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
+                using var regFont = new Font("Calibri", Math.Max(11f, fontSize * 0.96f), FontStyle.Regular, GraphicsUnit.Pixel);
                 using var mainBrush = new SolidBrush(_activeMainColor);
                 using var subBrush = new SolidBrush(_activeSubColor);
-                using var gridPen = new Pen(Color.FromArgb(140, 140, 140), 1f);
+                using var gridPen = new Pen(Color.FromArgb(135, 135, 140), 1.5f);
 
                 var sfLeft = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap };
                 var sfRight = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap };
@@ -1913,7 +2104,7 @@ namespace ReportAutomator
                     for (int c = 0; c < 5; c++)
                     {
                         g.DrawRectangle(gridPen, cx, y, colW[c], rowH);
-                        var padRect = new RectangleF(cx + (c == 0 && ln.LineType == 3 ? 10f : 3f), y, colW[c] - 6f, rowH);
+                        var padRect = new RectangleF(cx + (c == 0 && ln.LineType == 3 ? 18f : 8f), y, colW[c] - 16f, rowH);
                         g.DrawString(vals[c], f, Brushes.Black, padRect, c == 0 ? sfLeft : sfRight);
                         cx += colW[c];
                     }
@@ -1922,19 +2113,10 @@ namespace ReportAutomator
                 }
             }
 
-            using (var exactBmp = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb))
-            using (var g2 = Graphics.FromImage(exactBmp))
-            {
-                g2.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g2.SmoothingMode = SmoothingMode.HighQuality;
-                g2.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                g2.DrawImage(hiBmp, new Rectangle(0, 0, targetW, targetH));
-
-                var jpgEncoder = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
-                var encParams = new EncoderParameters(1);
-                encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 96L);
-                exactBmp.Save(jpgPath, jpgEncoder, encParams);
-            }
+            var jpgEncoder = ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
+            var encParams = new EncoderParameters(1);
+            encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 96L);
+            bmp.Save(jpgPath, jpgEncoder, encParams);
         }
 
         private void GenerateAccountingPdf(string pdfPath, string voyage)
