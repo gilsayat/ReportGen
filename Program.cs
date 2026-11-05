@@ -1687,7 +1687,7 @@ namespace ReportAutomator
                     $"All reports generated successfully in:\n{outDir}\n\n" +
                     $"• {Path.GetFileName(excelPath)} (7 Tabs)\n" +
                     $"• AccountReportStatistics.pdf (4-Page US Letter)\n" +
-                    $"• Sales.jpg (8x{GetDynamicJpgHeightInches(BuildPivotRenderLines(voyage).Count)}\" @ 200 DPI)\n" +
+                    $"• Sales.jpg (8x{GetDynamicJpgHeightInches(BuildPivotRenderLines(voyage).Count)}\" @ 300 DPI)\n" +
                     (_chkExportCsvs.Checked ? "• OrderReport-Photo.csv & OrderReport-Sales.csv" : ""),
                     "Generation Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -2038,7 +2038,7 @@ namespace ReportAutomator
 
         private int GetDynamicJpgHeightInches(int lineCount)
         {
-            // Scales dynamically from 8x24 inches up to 8x36 inches at 200 DPI based on accounting report length
+            // Scales dynamically from 8x24 inches up to 8x36 inches at 300 DPI based on accounting report length
             if (lineCount <= 145) return 24;
             if (lineCount <= 185) return 30;
             if (lineCount <= 215) return 32;
@@ -2049,12 +2049,12 @@ namespace ReportAutomator
         {
             var lines = BuildPivotRenderLines(voyage);
 
-            const int dpi = 200;
+            const int dpi = 300;
             int widthInches = 8;
             int heightInches = GetDynamicJpgHeightInches(lines.Count);
 
-            int targetW = widthInches * dpi;   // 1600 px (8 inches @ 200 DPI)
-            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @ 200 DPI)
+            int targetW = widthInches * dpi;   // 1600 px (8 inches @ 300 DPI)
+            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @ 300 DPI)
 
             using var bmp = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb);
             bmp.SetResolution(dpi, dpi);
