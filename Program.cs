@@ -185,7 +185,7 @@ namespace ReportAutomator
         private Color _activeMainColor = ColorTranslator.FromHtml("#D86DCD");
         private Color _activeSubColor = ColorTranslator.FromHtml("#F2CEEF");
 
-        private static readonly Dictionary<string, string> PluCategoryMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        private static Dictionary<string, string> PluCategoryMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             { "1ST CASUAL HORIZON RESTAURANT", "CC" },
             { "1ST CASUAL VISTA RESTAURANT", "CC" },
@@ -373,7 +373,7 @@ namespace ReportAutomator
             // CRITICAL: AutoScaleMode.None prevents WinForms from inflating fonts while keeping pixel coordinates fixed!
             AutoScaleMode = AutoScaleMode.None;
             Font = new Font("Segoe UI", 9f, FontStyle.Regular);
-            Text = "Gil ReportGen v2.1";
+            Text = "Gil ReportGen v2.2";
             ClientSize = new Size(1160, 760);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -1055,12 +1055,50 @@ namespace ReportAutomator
             if (PluCategoryMap.TryGetValue(clean, out string cat))
                 return cat;
 
-            string[] ccKeywords = { "GANGWAY", "RESTAURANT", "EMBARKATION", "DECK", "WHEEL", "BREAKFAST", "CLASSICS", "PARROTS", "PIRATE", "TOWEL", "INDIAN", "MARIACHI", "DANCER", "SKYRIDE", "SLIDES" };
-            foreach (var kw in ccKeywords)
+            // NEW CATEGORY DETECTED - Prompt the user to classify it
+            using var dlg = new Form
             {
-                if (clean.Contains(kw)) return "CC";
-            }
-            return "PP";
+                AutoScaleMode = AutoScaleMode.None,
+                Text = "New Category Detected",
+                ClientSize = new Size(420, 180),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = _isDarkMode ? Color.FromArgb(28, 28, 30) : Color.FromArgb(242, 242, 247),
+                ForeColor = _isDarkMode ? Color.FromArgb(245, 245, 247) : Color.FromArgb(28, 28, 30)
+            };
+
+            using var fontHeader = new Font("Segoe UI Semibold", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var fontSub = new Font("Segoe UI", 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+
+            var lblPrompt = new Label
+            {
+                Text = $"Unrecognized Capture Type detected:\n\"{clean}\"\n\nIs this CC (Casual) or PP (ProPortrait)?",
+                Font = fontHeader,
+                Location = new Point(20, 20),
+                Size = new Size(380, 60),
+                TextAlign = ContentAlignment.TopCenter,
+                UseMnemonic = false
+            };
+
+            string selectedCategory = "PP"; // Default fallback if they somehow close the form
+
+            var btnCC = CreatePillButton("CC (Casual)", new Point(50, 100), new Size(140, 40), true);
+            btnCC.Click += (s, e) => { selectedCategory = "CC"; dlg.DialogResult = DialogResult.OK; dlg.Close(); };
+
+            var btnPP = CreatePillButton("PP (ProPortrait)", new Point(230, 100), new Size(140, 40), true);
+            btnPP.BackColor = Color.FromArgb(216, 109, 205); // Orchid purple
+            btnPP.FlatAppearance.BorderColor = Color.FromArgb(190, 80, 180);
+            btnPP.Click += (s, e) => { selectedCategory = "PP"; dlg.DialogResult = DialogResult.OK; dlg.Close(); };
+
+            dlg.Controls.AddRange(new Control[] { lblPrompt, btnCC, btnPP });
+            dlg.ShowDialog(this);
+
+            // Save to the in-memory database so we don't ask again this session
+            PluCategoryMap[clean] = selectedCategory;
+            
+            return selectedCategory;
         }
 
         private void ParseAccountingHtmlXls(string filePath)
