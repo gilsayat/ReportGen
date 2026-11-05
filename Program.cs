@@ -125,6 +125,7 @@ namespace ReportAutomator
         private HashSet<string> _excludedOrderStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Refund", "InCart" };
         private HashSet<string> _excludedMediaTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OB02", "OB03", "OB04", "OB05", "OB2", "OB3", "OB4", "OB5" };
         private Button _btnFilterOrders;
+        private Font _gridHeaderFont = new Font("Segoe UI Semibold", 12f, FontStyle.Bold, GraphicsUnit.Pixel);
         private List<ManifestRow> _manifestRows = new List<ManifestRow>();
         private IrisSummary _irisSummary = new IrisSummary();
 
@@ -371,7 +372,7 @@ namespace ReportAutomator
             // CRITICAL: AutoScaleMode.None prevents WinForms from inflating fonts while keeping pixel coordinates fixed!
             AutoScaleMode = AutoScaleMode.None;
             Font = new Font("Segoe UI", 9f, FontStyle.Regular);
-            Text = "Gil ReportGen v1.02";
+            Text = "Gil ReportGen v2.0";
             ClientSize = new Size(1160, 760);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -665,7 +666,7 @@ namespace ReportAutomator
             _btnOpenFolder.Click += (s, e) =>
             {
                 if (!string.IsNullOrEmpty(_lastOutputFolder) && Directory.Exists(_lastOutputFolder))
-                    Process.Start("explorer.exe", _lastOutputFolder);
+                    Process.Start(new ProcessStartInfo { FileName = _lastOutputFolder, UseShellExecute = true });
             };
 
             _btnGenerateAll = CreatePillButton("Generate Excel + PDF + JPG", new Point(862, 13), new Size(246, 36), true);
@@ -825,7 +826,7 @@ namespace ReportAutomator
                 g.DefaultCellStyle.SelectionForeColor = Color.White;
                 g.ColumnHeadersDefaultCellStyle.BackColor = _isDarkMode ? Color.FromArgb(44, 44, 46) : Color.FromArgb(242, 242, 247);
                 g.ColumnHeadersDefaultCellStyle.ForeColor = textPrimary;
-                g.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 12f, FontStyle.Bold, GraphicsUnit.Pixel);
+                g.ColumnHeadersDefaultCellStyle.Font = _gridHeaderFont;
             }
 
             foreach (TabPage tp in _tabPreview.TabPages)
@@ -993,7 +994,7 @@ namespace ReportAutomator
             string firstBytes = "";
             using (var sr = new StreamReader(filePath, Encoding.UTF8, true))
             {
-                char[] buf = new char[600];
+                char[] buf = new char[8192];
                 int n = sr.Read(buf, 0, buf.Length);
                 firstBytes = new string(buf, 0, n);
             }
@@ -1068,34 +1069,51 @@ namespace ReportAutomator
             if (rows == null) return;
 
             int headerIdx = -1;
+            var colMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < rows.Count; i++)
             {
                 var cells = rows[i].SelectNodes("./td|./th");
-                if (cells != null && cells.Count >= 10 && cells[0].InnerText.Trim().Equals("Employee ID", StringComparison.OrdinalIgnoreCase))
+                if (cells != null && cells.Count >= 8 && cells[0].InnerText.Trim().Equals("Employee ID", StringComparison.OrdinalIgnoreCase))
                 {
                     headerIdx = i;
+                    for (int c = 0; c < cells.Count; c++)
+                    {
+                        string hName = NormalizeSpaces(HtmlEntity.DeEntitize(cells[c].InnerText));
+                        if (!string.IsNullOrEmpty(hName) && !colMap.ContainsKey(hName))
+                            colMap[hName] = c;
+                    }
                     break;
                 }
             }
 
             if (headerIdx == -1) return;
 
+            int idxEmp = colMap.TryGetValue("Employee ID", out int cEmp) ? cEmp : 0;
+            int idxPhotog = colMap.TryGetValue("Photographer Name", out int cPhotog) ? cPhotog : 1;
+            int idxCap = colMap.TryGetValue("Capture Type", out int cCap) ? cCap : 2;
+            int idxPlu = colMap.TryGetValue("Legacy FSS PLU", out int cPlu) ? cPlu : 3;
+            int idxImgs = colMap.TryGetValue("No.of Images", out int cImgs) ? cImgs : 4;
+            int idxCore = colMap.TryGetValue("Quantity Sold-Core", out int cCore) ? cCore : 5;
+            int idxUpsell = colMap.TryGetValue("Quantity Sold-Upsell", out int cUp) ? cUp : 7;
+            int idxAmt = colMap.TryGetValue("Total Sale Amount", out int cAmt) ? cAmt : 10;
+            int minCols = Math.Max(idxAmt, Math.Max(idxUpsell, idxCore)) + 1;
+
             for (int i = headerIdx + 1; i < rows.Count; i++)
             {
                 var cells = rows[i].SelectNodes("./td|./th");
-                if (cells == null || cells.Count < 11) continue;
+                if (cells == null || cells.Count < minCols) continue;
 
-                string empId = HtmlEntity.DeEntitize(cells[0].InnerText).Trim();
+                string empId = HtmlEntity.DeEntitize(cells[idxEmp].InnerText).Trim();
                 if (string.IsNullOrEmpty(empId)) continue;
 
-                string photog = NormalizeSpaces(HtmlEntity.DeEntitize(cells[1].InnerText));
-                string capType = HtmlEntity.DeEntitize(cells[2].InnerText).Trim();
-                string plu = HtmlEntity.DeEntitize(cells[3].InnerText).Trim();
+                string photog = NormalizeSpaces(HtmlEntity.DeEntitize(cells[idxPhotog].InnerText));
+                string capType = HtmlEntity.DeEntitize(cells[idxCap].InnerText).Trim();
+                string plu = HtmlEntity.DeEntitize(cells[idxPlu].InnerText).Trim();
 
-                int.TryParse(HtmlEntity.DeEntitize(cells[4].InnerText).Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out int imgs);
-                int.TryParse(HtmlEntity.DeEntitize(cells[5].InnerText).Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out int soldCore);
-                int.TryParse(HtmlEntity.DeEntitize(cells[7].InnerText).Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out int soldUpsell);
-                double.TryParse(HtmlEntity.DeEntitize(cells[10].InnerText).Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double totalAmt);
+                int.TryParse(HtmlEntity.DeEntitize(cells[idxImgs].InnerText).Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out int imgs);
+                int.TryParse(HtmlEntity.DeEntitize(cells[idxCore].InnerText).Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out int soldCore);
+                int.TryParse(HtmlEntity.DeEntitize(cells[idxUpsell].InnerText).Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out int soldUpsell);
+                double.TryParse(HtmlEntity.DeEntitize(cells[idxAmt].InnerText).Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double totalAmt);
 
                 _accountingRows.Add(new AccountingRow
                 {
@@ -1129,38 +1147,58 @@ namespace ReportAutomator
             if (rows == null) return;
 
             int headerIdx = -1;
+            var colMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < rows.Count; i++)
             {
                 var cells = rows[i].SelectNodes("./td|./th");
-                if (cells != null && cells.Count >= 18 && cells[0].InnerText.Trim().Equals("Order ID", StringComparison.OrdinalIgnoreCase))
+                if (cells != null && cells.Count >= 15 && cells[0].InnerText.Trim().Equals("Order ID", StringComparison.OrdinalIgnoreCase))
                 {
                     headerIdx = i;
+                    for (int c = 0; c < cells.Count; c++)
+                    {
+                        string hName = NormalizeSpaces(HtmlEntity.DeEntitize(cells[c].InnerText));
+                        if (!string.IsNullOrEmpty(hName) && !colMap.ContainsKey(hName))
+                            colMap[hName] = c;
+                    }
                     break;
                 }
             }
 
             if (headerIdx == -1) return;
 
+            int idxOrdId = colMap.TryGetValue("Order ID", out int cOrd) ? cOrd : 0;
+            int idxCabin = colMap.TryGetValue("Cabin No", out int cCab) ? cCab : (colMap.TryGetValue("Cabin Number", out int cCab2) ? cCab2 : 2);
+            int idxGuest = colMap.TryGetValue("Guest Name", out int cGst) ? cGst : 4;
+            int idxFile = colMap.TryGetValue("File Name", out int cFil) ? cFil : 5;
+            int idxEmp = colMap.TryGetValue("Employee ID", out int cEmp) ? cEmp : 6;
+            int idxPhotog = colMap.TryGetValue("Photographer Name", out int cPho) ? cPho : 7;
+            int idxCap = colMap.TryGetValue("Capture Type", out int cCap) ? cCap : 11;
+            int idxMedia = colMap.TryGetValue("Media Type", out int cMed) ? cMed : 12;
+            int idxStatus = colMap.TryGetValue("Order Status", out int cSts) ? cSts : 17;
+            int idxVoyage = colMap.TryGetValue("Voyage Number", out int cVoy) ? cVoy : 18;
+            int idxChannel = colMap.TryGetValue("ChannelID", out int cChn) ? cChn : (colMap.TryGetValue("Channel ID", out int cChn2) ? cChn2 : 21);
+            int minCols = new[] { idxOrdId, idxCabin, idxGuest, idxFile, idxEmp, idxPhotog, idxCap, idxMedia, idxStatus, idxVoyage, idxChannel }.Max() + 1;
+
             for (int i = headerIdx + 1; i < rows.Count; i++)
             {
                 var cells = rows[i].SelectNodes("./td|./th");
-                if (cells == null || cells.Count < 22) continue;
+                if (cells == null || cells.Count < minCols) continue;
 
-                string orderStatus = HtmlEntity.DeEntitize(cells[17].InnerText).Trim();
+                string orderStatus = HtmlEntity.DeEntitize(cells[idxStatus].InnerText).Trim();
 
                 var item = new OrderRow
                 {
-                    OrderId = HtmlEntity.DeEntitize(cells[0].InnerText).Trim(),
-                    CabinNo = HtmlEntity.DeEntitize(cells[2].InnerText).Trim(),
-                    GuestName = NormalizeSpaces(HtmlEntity.DeEntitize(cells[4].InnerText)),
-                    FileName = HtmlEntity.DeEntitize(cells[5].InnerText).Trim(),
-                    EmployeeId = HtmlEntity.DeEntitize(cells[6].InnerText).Trim(),
-                    PhotographerName = NormalizeSpaces(HtmlEntity.DeEntitize(cells[7].InnerText)),
-                    CaptureType = HtmlEntity.DeEntitize(cells[11].InnerText).Trim(),
-                    MediaType = HtmlEntity.DeEntitize(cells[12].InnerText).Trim(),
+                    OrderId = HtmlEntity.DeEntitize(cells[idxOrdId].InnerText).Trim(),
+                    CabinNo = HtmlEntity.DeEntitize(cells[idxCabin].InnerText).Trim(),
+                    GuestName = NormalizeSpaces(HtmlEntity.DeEntitize(cells[idxGuest].InnerText)),
+                    FileName = HtmlEntity.DeEntitize(cells[idxFile].InnerText).Trim(),
+                    EmployeeId = HtmlEntity.DeEntitize(cells[idxEmp].InnerText).Trim(),
+                    PhotographerName = NormalizeSpaces(HtmlEntity.DeEntitize(cells[idxPhotog].InnerText)),
+                    CaptureType = HtmlEntity.DeEntitize(cells[idxCap].InnerText).Trim(),
+                    MediaType = HtmlEntity.DeEntitize(cells[idxMedia].InnerText).Trim(),
                     OrderStatus = orderStatus,
-                    VoyageNumber = HtmlEntity.DeEntitize(cells[18].InnerText).Trim(),
-                    ChannelId = HtmlEntity.DeEntitize(cells[21].InnerText).Trim()
+                    VoyageNumber = HtmlEntity.DeEntitize(cells[idxVoyage].InnerText).Trim(),
+                    ChannelId = HtmlEntity.DeEntitize(cells[idxChannel].InnerText).Trim()
                 };
 
                 _rawOrderRows.Add(item);
@@ -1216,8 +1254,8 @@ namespace ReportAutomator
                 ForeColor = _isDarkMode ? Color.FromArgb(245, 245, 247) : Color.FromArgb(28, 28, 30)
             };
 
-            var fontHeader = new Font("Segoe UI Semibold", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
-            var fontSub = new Font("Segoe UI", 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var fontHeader = new Font("Segoe UI Semibold", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var fontSub = new Font("Segoe UI", 12f, FontStyle.Regular, GraphicsUnit.Pixel);
 
             var lblInstruction = new Label
             {
@@ -1381,6 +1419,60 @@ namespace ReportAutomator
             }
         }
 
+        private static List<string> SplitCsvLine(string line)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrEmpty(line)) return result;
+
+            var sb = new StringBuilder();
+            bool inQuotes = false;
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (c == '"')
+                {
+                    if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                    {
+                        sb.Append('"');
+                        i++;
+                    }
+                    else
+                    {
+                        inQuotes = !inQuotes;
+                    }
+                }
+                else if (c == ',' && !inQuotes)
+                {
+                    result.Add(sb.ToString());
+                    sb.Clear();
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+            result.Add(sb.ToString());
+            return result;
+        }
+
+        private static string SanitizeSpreadsheetText(string val)
+        {
+            if (string.IsNullOrEmpty(val)) return "";
+            char first = val[0];
+            if (first == '=' || first == '+' || first == '-' || first == '@')
+                return "'" + val;
+            return val;
+        }
+
+        private static string EscapeCsvField(string val)
+        {
+            if (string.IsNullOrEmpty(val)) return "";
+            string clean = SanitizeSpreadsheetText(val);
+            if (clean.IndexOfAny(new[] { ',', '"', '\r', '\n' }) >= 0)
+                return "\"" + clean.Replace("\"", "\"\"") + "\"";
+            return clean;
+        }
+
         private void ParseFssCsv(string filePath)
         {
             _irisSummary = new IrisSummary();
@@ -1405,7 +1497,7 @@ namespace ReportAutomator
 
                 if (inIrisSection)
                 {
-                    var parts = line.Split(',');
+                    var parts = SplitCsvLine(line);
                     if (parts.Length < 6) continue;
 
                     string plu = parts[1].Trim();
@@ -1670,10 +1762,13 @@ namespace ReportAutomator
 
                 string jpgPath = Path.Combine(outDir, "Sales.jpg");
                 string pdfPath = Path.Combine(outDir, "AccountReportStatistics.pdf");
+                int jpgHeightIn = 24;
                 if (_accountingRows.Count > 0)
                 {
-                    GenerateSalesJpg(jpgPath, voyage);
-                    GenerateAccountingPdf(pdfPath, voyage);
+                    var pivotLines = BuildPivotRenderLines(voyage);
+                    jpgHeightIn = GetDynamicJpgHeightInches(pivotLines.Count);
+                    GenerateSalesJpg(jpgPath, voyage, pivotLines);
+                    GenerateAccountingPdf(pdfPath, voyage, pivotLines);
                 }
 
                 if (_chkExportCsvs.Checked && _orderRowsForPhotoSales.Count > 0)
@@ -1687,7 +1782,7 @@ namespace ReportAutomator
                     $"All reports generated successfully in:\n{outDir}\n\n" +
                     $"• {Path.GetFileName(excelPath)} (7 Tabs)\n" +
                     $"• AccountReportStatistics.pdf (4-Page US Letter)\n" +
-                    $"• Sales.jpg (8x{GetDynamicJpgHeightInches(BuildPivotRenderLines(voyage).Count)}\" @ 300 DPI)\n" +
+                    $"• Sales.jpg (8x{jpgHeightIn}\" @ 200 DPI)\n" +
                     (_chkExportCsvs.Checked ? "• OrderReport-Photo.csv & OrderReport-Sales.csv" : ""),
                     "Generation Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -1739,7 +1834,7 @@ namespace ReportAutomator
                 var row = _accountingRows[i];
                 if (int.TryParse(row.EmployeeId, out int empNum)) wsData.Cell(r, 1).Value = empNum;
                 else wsData.Cell(r, 1).Value = row.EmployeeId;
-                wsData.Cell(r, 2).Value = row.PhotographerName;
+                wsData.Cell(r, 2).Value = SanitizeSpreadsheetText(row.PhotographerName);
                 wsData.Cell(r, 3).Value = row.CaptureType;
                 if (long.TryParse(row.Plu, out long pluNum)) wsData.Cell(r, 4).Value = pluNum;
                 else wsData.Cell(r, 4).Value = row.Plu;
@@ -1767,7 +1862,7 @@ namespace ReportAutomator
                 else wsData.Cell(r, 15).Value = man.CabinNum;
                 wsData.Cell(r, 16).Value = man.Quantity;
                 wsData.Cell(r, 17).Value = man.ItemDescription;
-                wsData.Cell(r, 18).Value = man.GuestName;
+                wsData.Cell(r, 18).Value = SanitizeSpreadsheetText(man.GuestName);
             }
 
             // TAB 2: CAPTURE_REPORT
@@ -1945,7 +2040,7 @@ namespace ReportAutomator
             {
                 var r = _orderRowsForPhotoSales[i];
                 wsPhoto.Cell(i + 1, 1).Value = r.FileName;
-                wsPhoto.Cell(i + 1, 2).Value = r.PhotographerName;
+                wsPhoto.Cell(i + 1, 2).Value = SanitizeSpreadsheetText(r.PhotographerName);
             }
             wsPhoto.Columns().AdjustToContents();
 
@@ -1955,7 +2050,7 @@ namespace ReportAutomator
             {
                 var r = _orderRowsForPhotoSales[i];
                 wsSales.Cell(i + 1, 1).Value = r.CabinNo;
-                wsSales.Cell(i + 1, 2).Value = r.GuestName;
+                wsSales.Cell(i + 1, 2).Value = SanitizeSpreadsheetText(r.GuestName);
                 wsSales.Cell(i + 1, 3).Value = r.FileName;
                 wsSales.Cell(i + 1, 4).Value = r.MediaType;
             }
@@ -1974,8 +2069,8 @@ namespace ReportAutomator
 
             foreach (var r in _orderRowsForPhotoSales)
             {
-                sbPhoto.AppendLine($"{r.FileName},{r.PhotographerName}");
-                sbSales.AppendLine($"{r.CabinNo},{r.GuestName},{r.FileName},{r.MediaType}");
+                sbPhoto.AppendLine($"{EscapeCsvField(r.FileName)},{EscapeCsvField(r.PhotographerName)}");
+                sbSales.AppendLine($"{EscapeCsvField(r.CabinNo)},{EscapeCsvField(r.GuestName)},{EscapeCsvField(r.FileName)},{EscapeCsvField(r.MediaType)}");
             }
 
             File.WriteAllText(photoCsv, sbPhoto.ToString(), new UTF8Encoding(false));
@@ -2038,23 +2133,23 @@ namespace ReportAutomator
 
         private int GetDynamicJpgHeightInches(int lineCount)
         {
-            // Scales dynamically from 8x24 inches up to 8x36 inches at 300 DPI based on accounting report length
+            // Scales dynamically from 8x24 inches up to 8x36 inches at 200 DPI based on accounting report length
             if (lineCount <= 145) return 24;
             if (lineCount <= 185) return 30;
             if (lineCount <= 215) return 32;
             return 36;
         }
 
-        private void GenerateSalesJpg(string jpgPath, string voyage)
+        private void GenerateSalesJpg(string jpgPath, string voyage, List<PivotRenderLine> prebuiltLines = null)
         {
-            var lines = BuildPivotRenderLines(voyage);
+            var lines = prebuiltLines ?? BuildPivotRenderLines(voyage);
 
-            const int dpi = 300;
+            const int dpi = 200;
             int widthInches = 8;
             int heightInches = GetDynamicJpgHeightInches(lines.Count);
 
-            int targetW = widthInches * dpi;   // 1600 px (8 inches @ 300 DPI)
-            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @ 300 DPI)
+            int targetW = widthInches * dpi;   // 1600 px (8 inches @ 200 DPI)
+            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @ 200 DPI)
 
             using var bmp = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb);
             bmp.SetResolution(dpi, dpi);
@@ -2119,13 +2214,17 @@ namespace ReportAutomator
             bmp.Save(jpgPath, jpgEncoder, encParams);
         }
 
-        private void GenerateAccountingPdf(string pdfPath, string voyage)
+        private void GenerateAccountingPdf(string pdfPath, string voyage, List<PivotRenderLine> prebuiltLines = null)
         {
-            var lines = BuildPivotRenderLines(voyage);
+            var lines = prebuiltLines ?? BuildPivotRenderLines(voyage);
             int lineIndex = 0;
 
             using var doc = new PrintDocument();
             doc.PrinterSettings.PrinterName = "Microsoft Print to PDF";
+            if (!doc.PrinterSettings.IsValid)
+            {
+                return;
+            }
             doc.PrinterSettings.PrintToFile = true;
             doc.PrinterSettings.PrintFileName = pdfPath;
             doc.DefaultPageSettings.PaperSize = new PaperSize("Letter", 850, 1100);
