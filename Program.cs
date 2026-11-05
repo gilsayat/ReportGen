@@ -1498,7 +1498,7 @@ namespace ReportAutomator
                 if (inIrisSection)
                 {
                     var parts = SplitCsvLine(line);
-                    if (parts.Length < 6) continue;
+                    if (parts.Count < 6) continue;
 
                     string plu = parts[1].Trim();
                     string desc = parts[2].Trim().ToUpperInvariant();
@@ -2133,7 +2133,7 @@ namespace ReportAutomator
 
         private int GetDynamicJpgHeightInches(int lineCount)
         {
-            // Scales dynamically from 8x24 inches up to 8x36 inches at 300 DPI based on accounting report length
+            // Scales dynamically from 8x24 inches up to 8x36 inches at  DPI based on accounting report length
             if (lineCount <= 145) return 24;
             if (lineCount <= 185) return 30;
             if (lineCount <= 215) return 32;
@@ -2144,12 +2144,12 @@ namespace ReportAutomator
         {
             var lines = prebuiltLines ?? BuildPivotRenderLines(voyage);
 
-            const int dpi = 300;
+            const int dpi = ;
             int widthInches = 8;
             int heightInches = GetDynamicJpgHeightInches(lines.Count);
 
-            int targetW = widthInches * dpi;   // 1600 px (8 inches @ 300 DPI)
-            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @ 300 DPI)
+            int targetW = widthInches * dpi;   // 1600 px (8 inches @  DPI)
+            int targetH = heightInches * dpi;  // 4800 px to 7200 px (24 to 36 inches @  DPI)
 
             using var bmp = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb);
             bmp.SetResolution(dpi, dpi);
